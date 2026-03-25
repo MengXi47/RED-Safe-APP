@@ -90,7 +90,7 @@ final class DetectionPoliciesViewModel {
                 try await APIClient.shared.fetchEdgeCommandResult(traceId: command.traceId)
             if result.status.lowercased() == "ok" {
                 updateCachedFall(enabled: fallEnabled); fallSaveResult = .success
-            } else { fallSaveResult = .error("儲存失敗") }
+            } else { fallSaveResult = .error(result.errorMessage ?? "儲存失敗") }
         } catch let error as ApiError where error.isNoValidLicense {
             showNoLicenseAlert = true
         } catch { fallSaveResult = .error(error.localizedDescription) }
@@ -112,7 +112,7 @@ final class DetectionPoliciesViewModel {
                 try await APIClient.shared.fetchEdgeCommandResult(traceId: command.traceId)
             if result.status.lowercased() == "ok" {
                 updateCachedInactivity(); inactivitySaveResult = .success
-            } else { inactivitySaveResult = .error("儲存失敗") }
+            } else { inactivitySaveResult = .error(result.errorMessage ?? "儲存失敗") }
         } catch let error as ApiError where error.isNoValidLicense {
             showNoLicenseAlert = true
         } catch { inactivitySaveResult = .error(error.localizedDescription) }
@@ -130,7 +130,7 @@ final class DetectionPoliciesViewModel {
                 snapshotImage = image
                 snapshotCache[selectedCameraIP] = image
                 roiPoints = policiesCache[selectedCameraIP]?.bedRoi.points ?? []
-            } else { errorMessage = "無法解析快照圖片" }
+            } else { errorMessage = result.errorMessage ?? "無法解析快照圖片" }
         } catch let error as ApiError where error.isNoValidLicense {
             showNoLicenseAlert = true
         } catch { errorMessage = "擷取快照失敗：\(error.localizedDescription)" }
@@ -151,7 +151,7 @@ final class DetectionPoliciesViewModel {
                 try await APIClient.shared.fetchEdgeCommandResult(traceId: command.traceId)
             if result.status.lowercased() == "ok" {
                 updateCachedBedRoi(); bedRoiSaveResult = .success
-            } else { bedRoiSaveResult = .error("儲存失敗") }
+            } else { bedRoiSaveResult = .error(result.errorMessage ?? "儲存失敗") }
         } catch let error as ApiError where error.isNoValidLicense {
             showNoLicenseAlert = true
         } catch { bedRoiSaveResult = .error(error.localizedDescription) }
@@ -185,6 +185,8 @@ final class DetectionPoliciesViewModel {
                 policiesCache[selectedCameraIP] = policies
                 applyPolicies(policies)
                 snapshotImage = snapshotCache[selectedCameraIP]
+            } else if let msg = result.errorMessage {
+                errorMessage = msg
             }
         } catch let error as ApiError where error.isNoValidLicense {
             showNoLicenseAlert = true

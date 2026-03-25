@@ -196,6 +196,9 @@ struct IPCameraConfigView: View {
             await MainActor.run {
                 self.devices = result.result ?? []
                 self.isLoading = false
+                if result.result == nil, let msg = result.errorMessage {
+                    self.errorMessage = msg
+                }
             }
         } catch let error as ApiError where error.isNoValidLicense {
             await MainActor.run {
@@ -279,7 +282,9 @@ struct IPCameraConfigView: View {
                 }
                 await fetchAddedCameras()
             } else {
-                let message = trimmedError?.isEmpty == false ? trimmedError! : "新增失敗，請稍後再試。"
+                let message = trimmedError?.isEmpty == false
+                    ? trimmedError!
+                    : (result.errorMessage ?? "新增失敗，請稍後再試。")
                 await MainActor.run {
                     isSubmittingAdd = false
                     addFormError = message
@@ -323,7 +328,7 @@ struct IPCameraConfigView: View {
                       await fetchAddedCameras()
                  }
              } else {
-                  await MainActor.run { deletingIP = nil; addedErrorMessage = "刪除失敗" }
+                  await MainActor.run { deletingIP = nil; addedErrorMessage = result.errorMessage ?? "刪除失敗" }
              }
          } catch let error as ApiError where error.isNoValidLicense {
              await MainActor.run {

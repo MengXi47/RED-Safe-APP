@@ -43,6 +43,8 @@ final class GeminiConfigViewModel {
                 geminiEnabled = config.gemini.enabled
                 apiKey = config.gemini.apiKey
                 selectedModel = config.gemini.model
+            } else if let msg = result.errorMessage {
+                errorMessage = msg
             }
             loaded = true
         } catch let error as ApiError where error.isNoValidLicense {
@@ -65,7 +67,7 @@ final class GeminiConfigViewModel {
             let command = try await APIClient.shared.sendEdgeCommand(edgeId: edgeId, code: "307", payload: payload)
             let result: EdgeCommandResultDTO<IgnoredResult> =
                 try await APIClient.shared.fetchEdgeCommandResult(traceId: command.traceId)
-            saveResult = result.status.lowercased() == "ok" ? .success : .error("儲存失敗")
+            saveResult = result.status.lowercased() == "ok" ? .success : .error(result.errorMessage ?? "儲存失敗")
         } catch let error as ApiError where error.isNoValidLicense {
             showNoLicenseAlert = true
         } catch {

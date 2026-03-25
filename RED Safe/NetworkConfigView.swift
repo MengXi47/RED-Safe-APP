@@ -141,7 +141,7 @@ struct NetworkConfigView: View {
             await MainActor.run {
                 self.config = result.result
                 self.isLoading = false
-                self.errorMessage = nil
+                self.errorMessage = result.result == nil ? result.errorMessage : nil
             }
         } catch let error as ApiError where error.isNoValidLicense {
             await MainActor.run {

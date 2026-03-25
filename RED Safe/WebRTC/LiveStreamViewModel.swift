@@ -58,7 +58,7 @@ final class LiveStreamViewModel: ObservableObject {
                 .fetchEdgeCommandResult(traceId: command.traceId)
 
             guard let answerResult = result.result else {
-                state = .failed("未收到遠端回應")
+                state = .failed(result.errorMessage ?? "未收到遠端回應")
                 return
             }
 
