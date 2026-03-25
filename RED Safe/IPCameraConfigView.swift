@@ -223,9 +223,6 @@ struct IPCameraConfigView: View {
             await MainActor.run {
                 self.addedDevices = result.result ?? []
                 self.isFetchingAdded = false
-                if result.result == nil, let msg = result.errorMessage {
-                    self.addedErrorMessage = msg
-                }
             }
         } catch let error as ApiError where error.isNoValidLicense {
             await MainActor.run {
