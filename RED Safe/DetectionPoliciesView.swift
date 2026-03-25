@@ -285,7 +285,7 @@ struct DetectionPoliciesView: View {
                     ErrorBanner(message: error)
                 }
 
-                if viewModel.selectedCameraIP.isEmpty {
+                if viewModel.selectedCameraIP.isEmpty, !viewModel.cameras.isEmpty {
                     emptyState
                 } else if viewModel.isLoadingPolicies {
                     LoadingCard(message: "正在載入偵測策略...")
