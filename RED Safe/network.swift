@@ -187,6 +187,7 @@ struct Endpoint<Response: Decodable> {
     var queryItems: [URLQueryItem]
     var body: AnyEncodable?
     var timeoutInterval: TimeInterval?
+    var retryPolicy: RetryPolicy?
 
     init(
         path: String,
@@ -195,7 +196,8 @@ struct Endpoint<Response: Decodable> {
         headers: [String: String] = [:],
         queryItems: [URLQueryItem] = [],
         body: AnyEncodable? = nil,
-        timeoutInterval: TimeInterval? = nil
+        timeoutInterval: TimeInterval? = nil,
+        retryPolicy: RetryPolicy? = nil
     ) {
         self.path = path
         self.method = method
@@ -204,6 +206,7 @@ struct Endpoint<Response: Decodable> {
         self.queryItems = queryItems
         self.body = body
         self.timeoutInterval = timeoutInterval
+        self.retryPolicy = retryPolicy
     }
 }
 
@@ -257,6 +260,35 @@ final class APIClient {
         _ endpoint: Endpoint<Response>,
         retryingOnAuthFailure: Bool
     ) async throws -> Response {
+        let policy = endpoint.retryPolicy
+            ?? (endpoint.requiresAuth ? .default : .none)
+
+        var attempt = 1
+        while true {
+            do {
+                return try await performRequest(endpoint, retryingOnAuthFailure: retryingOnAuthFailure)
+            } catch {
+                let decision = policy.decision(for: error, attempt: attempt)
+                guard case .retry(let delay) = decision else { throw error }
+#if DEBUG
+                print("🔄 [Retry] \(endpoint.path) attempt \(attempt)/\(policy.maxAttempts) after \(String(format: "%.1f", delay))s — \(error.localizedDescription)")
+#endif
+                // 若離線，先等待網路恢復再重試
+                if await !NetworkMonitor.shared.isConnected {
+                    let recovered = await NetworkMonitor.shared.waitForConnectivity(timeout: 30)
+                    if !recovered { throw error }
+                }
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                attempt += 1
+            }
+        }
+    }
+
+    /// 執行單次 HTTP 請求（含 auth retry），從原 send 方法中抽出。
+    private func performRequest<Response: Decodable>(
+        _ endpoint: Endpoint<Response>,
+        retryingOnAuthFailure: Bool
+    ) async throws -> Response {
         let request = try await makeRequest(from: endpoint)
 #if DEBUG
         debugLogRequest(request)
@@ -303,7 +335,7 @@ final class APIClient {
                case .http(_, let code?, _, _) = error,
                code.rawValue == "126" {
                 if await handleExpiredAccessToken() {
-                    return try await send(endpoint, retryingOnAuthFailure: false)
+                    return try await performRequest(endpoint, retryingOnAuthFailure: false)
                 }
             }
             throw error
@@ -1259,7 +1291,32 @@ extension APIClient {
 
     func fetchEdgeCommandResult<Result: Decodable>(
         traceId: String,
-        timeout: TimeInterval = 20
+        timeout: TimeInterval = 20,
+        retryPolicy: RetryPolicy = .sse
+    ) async throws -> EdgeCommandResultDTO<Result> {
+        var attempt = 1
+        while true {
+            do {
+                return try await performSSEFetch(traceId: traceId, timeout: timeout)
+            } catch {
+                let decision = retryPolicy.decision(for: error, attempt: attempt)
+                guard case .retry(let delay) = decision else { throw error }
+#if DEBUG
+                print("🔄 [SSE Retry] traceId=\(traceId) attempt \(attempt)/\(retryPolicy.maxAttempts) after \(String(format: "%.1f", delay))s")
+#endif
+                if await !NetworkMonitor.shared.isConnected {
+                    let recovered = await NetworkMonitor.shared.waitForConnectivity(timeout: 30)
+                    if !recovered { throw error }
+                }
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                attempt += 1
+            }
+        }
+    }
+
+    private func performSSEFetch<Result: Decodable>(
+        traceId: String,
+        timeout: TimeInterval
     ) async throws -> EdgeCommandResultDTO<Result> {
 #if DEBUG
         print("\n📶 [SSE] Start fetch traceId=\(traceId)")

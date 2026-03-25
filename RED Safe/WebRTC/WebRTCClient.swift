@@ -3,6 +3,11 @@
 
 import Foundation
 
+/// ICE 連線狀態，供 ViewModel 監控連線健康度並觸發重連。
+enum IceConnectionState: String, Sendable {
+    case new, checking, connected, completed, failed, disconnected, closed
+}
+
 #if canImport(LiveKitWebRTC)
 import LiveKitWebRTC
 
@@ -10,6 +15,7 @@ import LiveKitWebRTC
 @MainActor
 final class WebRTCClient: NSObject, ObservableObject {
     @Published var videoTrack: LKRTCVideoTrack?
+    @Published private(set) var iceConnectionState: IceConnectionState = .new
 
     private var peerConnectionFactory: LKRTCPeerConnectionFactory?
     private var peerConnection: LKRTCPeerConnection?
@@ -101,6 +107,7 @@ final class WebRTCClient: NSObject, ObservableObject {
         peerConnection?.close()
         peerConnection = nil
         videoTrack = nil
+        iceConnectionState = .closed
     }
 
     deinit {
@@ -125,7 +132,23 @@ extension WebRTCClient: LKRTCPeerConnectionDelegate {
 
     nonisolated func peerConnectionShouldNegotiate(_ peerConnection: LKRTCPeerConnection) {}
 
-    nonisolated func peerConnection(_ peerConnection: LKRTCPeerConnection, didChange newState: LKRTCIceConnectionState) {}
+    nonisolated func peerConnection(_ peerConnection: LKRTCPeerConnection, didChange newState: LKRTCIceConnectionState) {
+        let mapped: IceConnectionState
+        switch newState {
+        case .new:          mapped = .new
+        case .checking:     mapped = .checking
+        case .connected:    mapped = .connected
+        case .completed:    mapped = .completed
+        case .failed:       mapped = .failed
+        case .disconnected: mapped = .disconnected
+        case .closed:       mapped = .closed
+        case .count:        mapped = .closed
+        @unknown default:   mapped = .closed
+        }
+        Task { @MainActor in
+            self.iceConnectionState = mapped
+        }
+    }
 
     nonisolated func peerConnection(_ peerConnection: LKRTCPeerConnection, didChange newState: LKRTCIceGatheringState) {
         if newState == .complete {
@@ -177,6 +200,7 @@ enum WebRTCError: Error, LocalizedError {
 @MainActor
 final class WebRTCClient: NSObject, ObservableObject {
     @Published var videoTrack: AnyObject?
+    @Published private(set) var iceConnectionState: IceConnectionState = .new
 
     func createOffer() async throws -> String {
         throw WebRTCUnavailableError()
@@ -186,7 +210,9 @@ final class WebRTCClient: NSObject, ObservableObject {
         throw WebRTCUnavailableError()
     }
 
-    func disconnect() {}
+    func disconnect() {
+        iceConnectionState = .closed
+    }
 }
 
 struct WebRTCUnavailableError: LocalizedError {

@@ -12,6 +12,7 @@ final class HomeViewModel: ObservableObject {
     @Published var showNoLicenseAlert: Bool = false
     @Published var noLicenseAlertMessage: String = ""
     private var monitoringTimer: Timer?
+    private var connectivityTask: Task<Void, Never>?
 
     /// 載入使用者綁定的 Edge 清單。
     func loadEdges(showIndicator: Bool = true) {
@@ -33,29 +34,51 @@ final class HomeViewModel: ObservableObject {
          }
     }
     
-    // ... [Previous existing methods remain unchanged]
-    // Since I cannot use "..." in actual replacement, I will append the new logic at the end or integrate carefully.
-    // I will rewrite the entire class structure to insert the properties and methods cleanly since I have to match the end of the file.
-    
     // MARK: - Resource Monitoring
 
     func startResourceMonitoring() {
         stopResourceMonitoring()
-        // Immediate fetch
-        fetchResources()
-        
+
+        // 啟動 connectivity 監聽：離線暫停、上線恢復
+        connectivityTask = Task { [weak self] in
+            for await isConnected in NetworkMonitor.shared.connectivityUpdates {
+                guard let self, !Task.isCancelled else { return }
+                if isConnected {
+                    self.startTimer()
+                    self.fetchResources()
+                } else {
+                    self.stopTimer()
+                }
+            }
+        }
+
+        // 若目前有網路，立即開始
+        if NetworkMonitor.shared.isConnected {
+            fetchResources()
+            startTimer()
+        }
+    }
+
+    private func startTimer() {
+        stopTimer()
         monitoringTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             self?.fetchResources()
         }
     }
 
-    func stopResourceMonitoring() {
+    private func stopTimer() {
         monitoringTimer?.invalidate()
         monitoringTimer = nil
     }
 
+    func stopResourceMonitoring() {
+        stopTimer()
+        connectivityTask?.cancel()
+        connectivityTask = nil
+    }
+
     private func fetchResources() {
-        guard !edges.isEmpty else { return }
+        guard !edges.isEmpty, NetworkMonitor.shared.isConnected else { return }
         
         // Filter only online edges or try all? Requirement says "Dashboard active". 
         // Assuming we try all or let the user decide. Typically only online edges respond.

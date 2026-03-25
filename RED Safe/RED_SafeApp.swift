@@ -8,7 +8,10 @@ struct RED_SafeApp: App {
         WindowGroup {
             RootRouter()
                 .environmentObject(auth)
-                .onAppear { auth.bootstrap() }
+                .onAppear {
+                    NetworkMonitor.shared.start()
+                    auth.bootstrap()
+                }
         }
     }
 }

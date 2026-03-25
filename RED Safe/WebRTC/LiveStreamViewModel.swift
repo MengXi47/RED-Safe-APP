@@ -1,6 +1,7 @@
 // SPM dependency required: https://github.com/livekit/webrtc-xcframework.git
 // Add via Xcode → File → Add Package Dependencies → paste the URL above.
 
+import Combine
 import Foundation
 
 #if canImport(LiveKitWebRTC)
@@ -35,10 +36,17 @@ final class LiveStreamViewModel: ObservableObject {
     @Published var videoTrack: LKRTCVideoTrack?
 
     private let webRTCClient = WebRTCClient()
+    private var reconnectCount = 0
+    private var isReconnecting = false
+    private var iceCancellable: AnyCancellable?
+    private var currentEdgeId: String?
+
+    private static let maxReconnectAttempts = 3
 
     /// 建立即時影像連線。
     /// 流程：createOffer → POST edge command (code "201") → SSE poll → setRemoteAnswer
     func connect(edgeId: String) async {
+        currentEdgeId = edgeId
         state = .connecting
 
         do {
@@ -68,9 +76,11 @@ final class LiveStreamViewModel: ObservableObject {
             // 5. 觀察 videoTrack
             videoTrack = webRTCClient.videoTrack
             state = .connected
+            reconnectCount = 0
 
-            // 持續觀察 videoTrack 變化
+            // 持續觀察 videoTrack 變化 + ICE 狀態
             observeVideoTrack()
+            startIceObserver()
         } catch {
             state = .failed(error.localizedDescription)
         }
@@ -78,13 +88,70 @@ final class LiveStreamViewModel: ObservableObject {
 
     /// 斷開連線。
     func disconnect() {
+        iceCancellable = nil
         webRTCClient.disconnect()
         videoTrack = nil
+        reconnectCount = 0
+        isReconnecting = false
+        currentEdgeId = nil
         state = .disconnected
     }
 
+    // MARK: - ICE State Observer & Auto-Reconnect
+
+    private func startIceObserver() {
+        iceCancellable = webRTCClient.$iceConnectionState
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] newState in
+                guard let self else { return }
+                self.handleIceStateChange(newState)
+            }
+    }
+
+    private func handleIceStateChange(_ newState: IceConnectionState) {
+        switch newState {
+        case .disconnected:
+            // 等 3 秒看是否自行恢復
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let self,
+                      self.webRTCClient.iceConnectionState == .disconnected else { return }
+                await self.attemptReconnect()
+            }
+        case .failed:
+            Task { [weak self] in
+                await self?.attemptReconnect()
+            }
+        default:
+            break
+        }
+    }
+
+    private func attemptReconnect() async {
+        guard !isReconnecting else { return }
+        guard let edgeId = currentEdgeId else { return }
+        isReconnecting = true
+        defer { isReconnecting = false }
+
+        reconnectCount += 1
+        if reconnectCount > Self.maxReconnectAttempts {
+            state = .failed("連線失敗，請手動重試")
+            iceCancellable = nil
+            return
+        }
+#if DEBUG
+        print("🔄 [WebRTC] 嘗試重連 \(reconnectCount)/\(Self.maxReconnectAttempts) edgeId=\(edgeId)")
+#endif
+        webRTCClient.disconnect()
+        videoTrack = nil
+        state = .connecting
+        await connect(edgeId: edgeId)
+    }
+
+    // MARK: - Video Track Observer
+
     private func observeVideoTrack() {
-        // 若建連後 track 尚未就緒，透過 Task 持續觀察
         Task { [weak self] in
             guard let self else { return }
             for _ in 0..<50 { // 最多等 5 秒

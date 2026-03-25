@@ -75,6 +75,7 @@ struct HomeView: View {
                      .padding(.bottom, 60)
             }
         }
+        .networkStatusBanner()
         .onAppear {
             // Initial Data Load
             homeVM.loadEdges()

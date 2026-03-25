@@ -134,6 +134,7 @@ final class AuthManager: ObservableObject {
 
     @discardableResult
     /// 嘗試透過 Refresh Token 還原會話；若失敗則回復到登出狀態。
+    /// 暫時性網路錯誤不會登出使用者，僅記錄錯誤描述。
     func restoreSessionIfPossible() async -> Bool {
         phase = .refreshing
         guard let refresh = storedRefreshToken else {
@@ -144,24 +145,23 @@ final class AuthManager: ObservableObject {
         }
 
         do {
-            let response = try await APIClient.shared.refreshAccessToken(refreshToken: refresh)
-            let access = response.accessToken
-            guard !access.isEmpty else {
-                clearPersistedSession()
-                phase = .signedOut
-                return false
-            }
-
+            let access = try await retryRefresh(refreshToken: refresh)
             tokens = SessionTokens(accessToken: access, refreshToken: refresh)
             if await refreshProfileFromRemote(force: true) == nil {
                 hydrateProfileIfNeeded()
             }
             phase = .authenticated
             return true
-        } catch {
+        } catch where isDefinitiveAuthFailure(error) {
             clearPersistedSession()
             phase = .signedOut
             lastErrorDescription = error.localizedDescription
+            return false
+        } catch {
+            // 暫時性網路錯誤：保留 refresh token，不登出
+            hydrateProfileIfNeeded()
+            phase = .signedOut
+            lastErrorDescription = "網路連線不穩定，請稍後再試"
             return false
         }
     }
@@ -213,6 +213,7 @@ final class AuthManager: ObservableObject {
 
     @discardableResult
     /// 透過 Refresh Token 續期 Access Token，維持登入狀態。
+    /// 暫時性網路錯誤會重試，不會直接登出使用者。
     func refreshAccessToken(refreshToken: String? = nil) async -> Bool {
         let refresh = refreshToken ?? tokens?.refreshToken ?? storedRefreshToken
         guard let refresh, !refresh.isEmpty else {
@@ -223,13 +224,7 @@ final class AuthManager: ObservableObject {
         }
 
         do {
-            let response = try await APIClient.shared.refreshAccessToken(refreshToken: refresh)
-            let access = response.accessToken
-            guard !access.isEmpty else {
-                clearPersistedSession()
-                phase = .signedOut
-                return false
-            }
+            let access = try await retryRefresh(refreshToken: refresh)
 
             if tokens != nil {
                 tokens?.accessToken = access
@@ -243,10 +238,59 @@ final class AuthManager: ObservableObject {
             }
             phase = .authenticated
             return true
-        } catch {
+        } catch where isDefinitiveAuthFailure(error) {
             clearPersistedSession()
             phase = .signedOut
             lastErrorDescription = error.localizedDescription
+            return false
+        } catch {
+            // 暫時性網路錯誤：保留 refresh token，不登出
+            lastErrorDescription = "網路連線不穩定，請稍後再試"
+            return false
+        }
+    }
+
+    // MARK: - Resilient Refresh Helpers
+
+    /// 嘗試以指數退避重試 refresh，最多 3 次。回傳新的 access token。
+    /// 使用 nonisolated 避免在 @MainActor 上 sleep 阻塞 UI。
+    private nonisolated func retryRefresh(refreshToken: String, maxAttempts: Int = 3) async throws -> String {
+        var lastError: Error?
+        for attempt in 1...maxAttempts {
+            do {
+                let response = try await APIClient.shared.refreshAccessToken(refreshToken: refreshToken)
+                guard !response.accessToken.isEmpty else {
+                    throw ApiError.invalidPayload(reason: "伺服器未回傳 access token")
+                }
+                return response.accessToken
+            } catch {
+                if await isDefinitiveAuthFailure(error) { throw error }
+                lastError = error
+                if attempt < maxAttempts {
+                    if await !NetworkMonitor.shared.isConnected {
+                        let recovered = await NetworkMonitor.shared.waitForConnectivity(timeout: 15)
+                        if !recovered { break }
+                    }
+                    let baseDelay = pow(2.0, Double(attempt - 1))
+                    let jitter = Double.random(in: 0.8...1.2)
+                    let delay = baseDelay * jitter
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+            }
+        }
+        throw lastError ?? ApiError.transport(URLError(.notConnectedToInternet))
+    }
+
+    /// 判斷錯誤是否為伺服器明確拒絕（非暫時性），應立即登出。
+    private func isDefinitiveAuthFailure(_ error: Error) -> Bool {
+        guard let apiError = error as? ApiError else { return false }
+        switch apiError {
+        case .http(let status, let code, _, _):
+            if let code, ["132", "127"].contains(code.rawValue) { return true }
+            return (400...499).contains(status)
+        case .invalidPayload:
+            return true
+        default:
             return false
         }
     }
