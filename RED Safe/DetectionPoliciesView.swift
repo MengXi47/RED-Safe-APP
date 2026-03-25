@@ -55,6 +55,9 @@ final class DetectionPoliciesViewModel {
             let result: EdgeCommandResultDTO<[AddedIPCameraDTO]> =
                 try await APIClient.shared.fetchEdgeCommandResult(traceId: command.traceId)
             cameras = result.result ?? []
+            if result.result == nil, let msg = result.errorMessage {
+                errorMessage = msg
+            }
             camerasLoaded = true
             if cameras.count == 1 {
                 selectedCameraIP = cameras[0].ipAddress

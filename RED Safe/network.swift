@@ -762,12 +762,17 @@ struct EdgeCommandResultDTO<Result: Decodable>: Decodable {
     let result: Result?
     let status: String
     let traceId: String?
+    let errorMessage: String?
 
     private enum CodingKeys: String, CodingKey {
         case code
         case result
         case status
         case traceId
+    }
+
+    private enum ErrorResultKeys: String, CodingKey {
+        case errorMessage
     }
 
     init(from decoder: Decoder) throws {
@@ -786,7 +791,16 @@ struct EdgeCommandResultDTO<Result: Decodable>: Decodable {
             throw DecodingError.typeMismatch(String.self, context)
         }
 
-        result = try container.decodeIfPresent(Result.self, forKey: .result)
+        if let decoded = try? container.decodeIfPresent(Result.self, forKey: .result) {
+            result = decoded
+            errorMessage = nil
+        } else if let errorContainer = try? container.nestedContainer(keyedBy: ErrorResultKeys.self, forKey: .result) {
+            result = nil
+            errorMessage = try? errorContainer.decode(String.self, forKey: .errorMessage)
+        } else {
+            result = nil
+            errorMessage = nil
+        }
     }
 }
 
