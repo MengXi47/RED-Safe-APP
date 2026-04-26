@@ -1,8 +1,10 @@
 import SwiftUI
+import UIKit
 
 @main
 struct RED_SafeApp: App {
     @StateObject private var auth = AuthManager.shared
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup {
@@ -13,6 +15,16 @@ struct RED_SafeApp: App {
                     auth.bootstrap()
                 }
         }
+    }
+}
+
+/// 由 OrientationLock 動態決定支援的方向,讓即時影像頁可橫向、其他頁維持直向。
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        OrientationLock.shared.mask
     }
 }
 
