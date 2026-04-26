@@ -1,0 +1,39 @@
+# macOS
+.DS_Store
+
+# Xcode - 個人 / 工作區狀態
+xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
+**/xcuserdata/
+**/*.xcuserstate
+
+# Xcode - build 產物
+build/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Misc
+*.log
+*.swp
+*~
