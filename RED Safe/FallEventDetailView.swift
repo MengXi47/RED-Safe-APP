@@ -2,32 +2,49 @@ import SwiftUI
 
 // MARK: - Snapshot Kind Mapping
 
-/// 後端 `kind` 欄位的中文標籤；保持與 backend EmailService 的時間軸描述一致。
-enum FallSnapshotKind: String {
-    case before2s     = "BEFORE_2S"
-    case before05s    = "BEFORE_500MS"
-    case impact       = "IMPACT"
-    case after2s      = "AFTER_2S"
-    case recovered    = "RECOVERED"
+/// 後端 `kind` 欄位的中文標籤；對照 Core/edge 實際送出的 lowercase snake_case
+/// (pre_fall_2s / pre_fall_500ms / fall_moment / post_fall_2s / recovery /
+/// live_escalation_*)，並向後相容舊式大寫鍵。
+enum FallSnapshotKind {
+    case before2s
+    case before05s
+    case impact
+    case after2s
+    case recovered
+    case liveEscalation
+    case unknown(String)
 
     init(rawValue raw: String) {
-        switch raw.uppercased() {
-        case "BEFORE_2S":   self = .before2s
-        case "BEFORE_500MS", "BEFORE_0_5S": self = .before05s
-        case "IMPACT":      self = .impact
-        case "AFTER_2S":    self = .after2s
-        case "RECOVERED":   self = .recovered
-        default:            self = .impact
+        let key = raw.lowercased()
+        switch key {
+        case "pre_fall_2s", "before_2s":
+            self = .before2s
+        case "pre_fall_500ms", "pre_fall_0_5s", "before_500ms", "before_0_5s":
+            self = .before05s
+        case "fall_moment", "impact":
+            self = .impact
+        case "post_fall_2s", "after_2s":
+            self = .after2s
+        case "recovery", "recovered":
+            self = .recovered
+        default:
+            if key.hasPrefix("live_escalation") {
+                self = .liveEscalation
+            } else {
+                self = .unknown(raw)
+            }
         }
     }
 
     var displayName: String {
         switch self {
-        case .before2s:   return "跌倒前 2 秒"
-        case .before05s:  return "跌倒前 0.5 秒"
-        case .impact:     return "跌倒瞬間"
-        case .after2s:    return "跌倒後 2 秒"
-        case .recovered:  return "爬起時"
+        case .before2s:        return "跌倒前 2 秒"
+        case .before05s:       return "跌倒前 0.5 秒"
+        case .impact:          return "跌倒瞬間"
+        case .after2s:         return "跌倒後 2 秒"
+        case .recovered:       return "爬起時"
+        case .liveEscalation:  return "持續未起身"
+        case .unknown(let raw): return raw.isEmpty ? "未知時點" : raw
         }
     }
 }
