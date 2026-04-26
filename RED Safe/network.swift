@@ -330,10 +330,13 @@ final class APIClient {
                 throw ApiError.decoding(error)
             }
         } catch let error as ApiError {
+            // JWT 失效自動 refresh：HTTP 401 或業務錯誤碼 126 都視為 token 過期。
+            // 若 refresh 失敗，handleExpiredAccessToken() 內會呼叫 AuthManager.signOut(),
+            // ObservableObject 狀態變化會讓 UI 自動跳回登入畫面。
             if retryingOnAuthFailure,
                endpoint.requiresAuth,
-               case .http(_, let code?, _, _) = error,
-               code.rawValue == "126" {
+               case .http(let status, let code, _, _) = error,
+               status == 401 || code?.rawValue == "126" {
                 if await handleExpiredAccessToken() {
                     return try await performRequest(endpoint, retryingOnAuthFailure: false)
                 }
