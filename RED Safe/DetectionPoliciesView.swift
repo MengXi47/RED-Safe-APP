@@ -13,8 +13,14 @@ final class DetectionPoliciesViewModel {
     private(set) var errorMessage: String?
     var showNoLicenseAlert = false
 
-    // Fall detection
+    // Fall detection — 預設值與合法範圍對齊 Core fall_state_machine.md §7
     var fallEnabled = false
+    var fallSensitivity: Double = FallDetectionPolicy.defaultSensitivity
+    var fallConfirmDownSeconds: Double = FallDetectionPolicy.defaultConfirmDownSeconds
+    var fallRecoverySeconds: Double = FallDetectionPolicy.defaultRecoverySeconds
+    var fallEventCooldownSeconds: Double = FallDetectionPolicy.defaultEventCooldownSeconds
+    var fallSecondaryDetectionEnabled = FallDetectionPolicy.defaultSecondaryEnabled
+    var fallSelfRecoveryReportEnabled = FallDetectionPolicy.defaultSelfRecoveryReportEnabled
     private(set) var isSavingFall = false
     private(set) var fallSaveResult: SaveResult?
 
@@ -80,13 +86,30 @@ final class DetectionPoliciesViewModel {
 
     func saveFallDetection() async {
         isSavingFall = true; fallSaveResult = nil
+        // Clamp 到 Core 端的合法範圍,避免送出 PolicyService 會 reject 的值。
+        let sensitivity = clamp(fallSensitivity, FallDetectionPolicy.sensitivityRange)
+        let confirmDown = clamp(fallConfirmDownSeconds, FallDetectionPolicy.confirmDownRange)
+        let recovery = clamp(fallRecoverySeconds, FallDetectionPolicy.recoveryRange)
+        let cooldown = clamp(fallEventCooldownSeconds, FallDetectionPolicy.eventCooldownRange)
         do {
-            let payload = UpdateFallPayload(ipAddress: selectedCameraIP, enabled: fallEnabled)
+            let payload = UpdateFallPayload(
+                ipAddress: selectedCameraIP,
+                enabled: fallEnabled,
+                sensitivity: sensitivity,
+                confirmDownSeconds: confirmDown,
+                recoverySeconds: recovery,
+                eventCooldownSeconds: cooldown,
+                secondaryFallDetectionEnabled: fallSecondaryDetectionEnabled,
+                selfRecoveryReportEnabled: fallSelfRecoveryReportEnabled)
             let command = try await APIClient.shared.sendEdgeCommand(edgeId: edgeId, code: "302", payload: payload)
             let result: EdgeCommandResultDTO<IgnoredResult> =
                 try await APIClient.shared.fetchEdgeCommandResult(traceId: command.traceId)
             if result.status.lowercased() == "ok" {
-                updateCachedFall(enabled: fallEnabled); fallSaveResult = .success
+                fallSensitivity = sensitivity
+                fallConfirmDownSeconds = confirmDown
+                fallRecoverySeconds = recovery
+                fallEventCooldownSeconds = cooldown
+                updateCachedFall(); fallSaveResult = .success
             } else { fallSaveResult = .error(result.errorMessage ?? "儲存失敗") }
         } catch let error as ApiError where error.isNoValidLicense {
             showNoLicenseAlert = true
@@ -193,6 +216,12 @@ final class DetectionPoliciesViewModel {
 
     private func applyPolicies(_ p: CameraPoliciesDTO) {
         fallEnabled = p.fallDetection.enabled
+        fallSensitivity = p.fallDetection.sensitivity
+        fallConfirmDownSeconds = p.fallDetection.confirmDownSeconds
+        fallRecoverySeconds = p.fallDetection.recoverySeconds
+        fallEventCooldownSeconds = p.fallDetection.eventCooldownSeconds
+        fallSecondaryDetectionEnabled = p.fallDetection.secondaryFallDetectionEnabled
+        fallSelfRecoveryReportEnabled = p.fallDetection.selfRecoveryReportEnabled
         inactivityEnabled = p.inactivity.enabled
         idleMinutes = p.inactivity.idleMinutes
         quietEnabled = p.inactivity.quietEnabled
@@ -208,10 +237,18 @@ final class DetectionPoliciesViewModel {
         fallSaveResult = nil; inactivitySaveResult = nil; bedRoiSaveResult = nil
     }
 
-    private func updateCachedFall(enabled: Bool) {
+    private func updateCachedFall() {
         guard let c = policiesCache[selectedCameraIP] else { return }
+        let fall = FallDetectionPolicy(
+            enabled: fallEnabled,
+            sensitivity: fallSensitivity,
+            confirmDownSeconds: fallConfirmDownSeconds,
+            recoverySeconds: fallRecoverySeconds,
+            eventCooldownSeconds: fallEventCooldownSeconds,
+            secondaryFallDetectionEnabled: fallSecondaryDetectionEnabled,
+            selfRecoveryReportEnabled: fallSelfRecoveryReportEnabled)
         policiesCache[selectedCameraIP] = CameraPoliciesDTO(
-            ipAddress: c.ipAddress, fallDetection: FallDetectionPolicy(enabled: enabled),
+            ipAddress: c.ipAddress, fallDetection: fall,
             inactivity: c.inactivity, bedRoi: c.bedRoi)
     }
     private func updateCachedInactivity() {
@@ -257,6 +294,10 @@ final class DetectionPoliciesViewModel {
 private func timeDate(hour: Int, minute: Int) -> Date {
     var c = DateComponents(); c.hour = hour; c.minute = minute
     return Calendar.current.date(from: c) ?? Date()
+}
+
+fileprivate func clamp<T: Comparable>(_ value: T, _ range: ClosedRange<T>) -> T {
+    min(max(value, range.lowerBound), range.upperBound)
 }
 
 enum SaveResult {
@@ -602,12 +643,139 @@ private struct FallDetectionSection: View {
                         .tint(.primaryBrand)
                 }
 
+                if viewModel.fallEnabled {
+                    Divider().background(Color.border)
+
+                    sensitivityRow
+
+                    Divider().background(Color.border)
+
+                    secondsStepper(
+                        icon: "timer",
+                        title: "確認倒下秒數",
+                        value: $viewModel.fallConfirmDownSeconds,
+                        range: FallDetectionPolicy.confirmDownRange,
+                        step: 0.5,
+                        format: "%.1f s")
+
+                    Divider().background(Color.border)
+
+                    secondsStepper(
+                        icon: "arrow.uturn.up",
+                        title: "恢復緩衝秒數",
+                        value: $viewModel.fallRecoverySeconds,
+                        range: FallDetectionPolicy.recoveryRange,
+                        step: 0.5,
+                        format: "%.1f s")
+
+                    Divider().background(Color.border)
+
+                    secondsStepper(
+                        icon: "bell.slash",
+                        title: "事件冷卻秒數",
+                        value: $viewModel.fallEventCooldownSeconds,
+                        range: FallDetectionPolicy.eventCooldownRange,
+                        step: 5.0,
+                        format: "%.0f s")
+
+                    Divider().background(Color.border)
+
+                    toggleRow(
+                        icon: "repeat",
+                        title: "二次跌倒識別",
+                        isOn: $viewModel.fallSecondaryDetectionEnabled)
+
+                    toggleRow(
+                        icon: "figure.stand",
+                        title: "自行爬起也通報",
+                        isOn: $viewModel.fallSelfRecoveryReportEnabled)
+                }
+
                 SaveResultBanner(result: viewModel.fallSaveResult)
 
                 PrimaryButton("儲存", isLoading: viewModel.isSavingFall, isDisabled: false) {
                     Task { await viewModel.saveFallDetection() }
                 }
             }
+        }
+    }
+
+    // MARK: - Subviews
+
+    private var sensitivityRow: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: "dial.high")
+                    .font(.captionText)
+                    .foregroundStyle(Color.textSecondary)
+                    .frame(width: 20)
+                Text("感度")
+                    .font(.bodyMedium)
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                Text(String(format: "%.2f", viewModel.fallSensitivity))
+                    .font(.bodyMedium.weight(.medium))
+                    .foregroundStyle(Color.primaryBrand)
+            }
+            Slider(
+                value: $viewModel.fallSensitivity,
+                in: FallDetectionPolicy.sensitivityRange,
+                step: 0.05)
+                .tint(.primaryBrand)
+            HStack {
+                Text("保守")
+                    .font(.captionText)
+                    .foregroundStyle(Color.textTertiary)
+                Spacer()
+                Text("敏感")
+                    .font(.captionText)
+                    .foregroundStyle(Color.textTertiary)
+            }
+        }
+    }
+
+    private func secondsStepper(
+        icon: String,
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        format: String
+    ) -> some View {
+        Stepper(value: value, in: range, step: step) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.captionText)
+                    .foregroundStyle(Color.textSecondary)
+                    .frame(width: 20)
+                Text(title)
+                    .font(.bodyMedium)
+                    .foregroundStyle(Color.textPrimary)
+                Spacer()
+                Text(String(format: format, value.wrappedValue))
+                    .font(.bodyMedium.weight(.medium))
+                    .foregroundStyle(Color.primaryBrand)
+            }
+        }
+    }
+
+    private func toggleRow(
+        icon: String,
+        title: String,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.captionText)
+                .foregroundStyle(Color.textSecondary)
+                .frame(width: 20)
+            Text(title)
+                .font(.bodyMedium)
+                .foregroundStyle(Color.textPrimary)
+            Spacer()
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .tint(.primaryBrand)
         }
     }
 }

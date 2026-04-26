@@ -980,8 +980,56 @@ struct UserLicenseListResponse: Decodable {
 
 // MARK: - Detection Policy DTOs
 
+// 對齊 Core fall_state_machine.md §7 與 PolicyService::ParseFallInputs 的合法範圍/預設。
 struct FallDetectionPolicy: Codable {
-    let enabled: Bool
+    static let defaultSensitivity: Double = 0.5
+    static let defaultConfirmDownSeconds: Double = 3.0
+    static let defaultRecoverySeconds: Double = 2.0
+    static let defaultEventCooldownSeconds: Double = 30.0
+    static let defaultSecondaryEnabled: Bool = false
+    static let defaultSelfRecoveryReportEnabled: Bool = false
+
+    static let sensitivityRange: ClosedRange<Double> = 0.0...1.0
+    static let confirmDownRange: ClosedRange<Double> = 0.1...30.0
+    static let recoveryRange: ClosedRange<Double> = 0.1...30.0
+    static let eventCooldownRange: ClosedRange<Double> = 1.0...300.0
+
+    var enabled: Bool
+    var sensitivity: Double
+    var confirmDownSeconds: Double
+    var recoverySeconds: Double
+    var eventCooldownSeconds: Double
+    var secondaryFallDetectionEnabled: Bool
+    var selfRecoveryReportEnabled: Bool
+
+    init(
+        enabled: Bool,
+        sensitivity: Double = FallDetectionPolicy.defaultSensitivity,
+        confirmDownSeconds: Double = FallDetectionPolicy.defaultConfirmDownSeconds,
+        recoverySeconds: Double = FallDetectionPolicy.defaultRecoverySeconds,
+        eventCooldownSeconds: Double = FallDetectionPolicy.defaultEventCooldownSeconds,
+        secondaryFallDetectionEnabled: Bool = FallDetectionPolicy.defaultSecondaryEnabled,
+        selfRecoveryReportEnabled: Bool = FallDetectionPolicy.defaultSelfRecoveryReportEnabled
+    ) {
+        self.enabled = enabled
+        self.sensitivity = sensitivity
+        self.confirmDownSeconds = confirmDownSeconds
+        self.recoverySeconds = recoverySeconds
+        self.eventCooldownSeconds = eventCooldownSeconds
+        self.secondaryFallDetectionEnabled = secondaryFallDetectionEnabled
+        self.selfRecoveryReportEnabled = selfRecoveryReportEnabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        sensitivity = try c.decodeIfPresent(Double.self, forKey: .sensitivity) ?? FallDetectionPolicy.defaultSensitivity
+        confirmDownSeconds = try c.decodeIfPresent(Double.self, forKey: .confirmDownSeconds) ?? FallDetectionPolicy.defaultConfirmDownSeconds
+        recoverySeconds = try c.decodeIfPresent(Double.self, forKey: .recoverySeconds) ?? FallDetectionPolicy.defaultRecoverySeconds
+        eventCooldownSeconds = try c.decodeIfPresent(Double.self, forKey: .eventCooldownSeconds) ?? FallDetectionPolicy.defaultEventCooldownSeconds
+        secondaryFallDetectionEnabled = try c.decodeIfPresent(Bool.self, forKey: .secondaryFallDetectionEnabled) ?? FallDetectionPolicy.defaultSecondaryEnabled
+        selfRecoveryReportEnabled = try c.decodeIfPresent(Bool.self, forKey: .selfRecoveryReportEnabled) ?? FallDetectionPolicy.defaultSelfRecoveryReportEnabled
+    }
 }
 
 struct InactivityPolicy: Codable {
@@ -1034,6 +1082,12 @@ struct IPAddressPayload: Encodable {
 struct UpdateFallPayload: Encodable {
     let ipAddress: String
     let enabled: Bool
+    let sensitivity: Double
+    let confirmDownSeconds: Double
+    let recoverySeconds: Double
+    let eventCooldownSeconds: Double
+    let secondaryFallDetectionEnabled: Bool
+    let selfRecoveryReportEnabled: Bool
 }
 
 struct UpdateInactivityPayload: Encodable {
