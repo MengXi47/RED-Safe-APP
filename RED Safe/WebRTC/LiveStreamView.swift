@@ -52,8 +52,8 @@ struct LiveStreamView: View {
             guard let started = startedAt else { return }
             elapsedSeconds = Int(Date().timeIntervalSince(started))
         }
-        .onChange(of: viewModel.state) { _, newState in
-            handleStateChange(newState)
+        .onChange(of: isLive) { _, newIsLive in
+            handleLiveChange(isLive: newIsLive)
         }
         .task {
             await viewModel.connect(edgeId: edge.edgeId)
@@ -320,8 +320,8 @@ struct LiveStreamView: View {
 
     // MARK: - Behavior
 
-    private func handleStateChange(_ newState: LiveStreamViewModel.State) {
-        if case .connected = newState, viewModel.videoTrack != nil {
+    private func handleLiveChange(isLive: Bool) {
+        if isLive {
             if startedAt == nil { startedAt = Date(); elapsedSeconds = 0 }
             scheduleControlsHide()
         } else {
