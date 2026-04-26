@@ -776,14 +776,6 @@ private struct EdgePasswordSheet: View {
     }
 }
 
-struct ScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.spring(), value: configuration.isPressed)
-    }
-}
-
 extension Notification.Name {
     static let stopCameraSession = Notification.Name("stopCameraSession")
 }

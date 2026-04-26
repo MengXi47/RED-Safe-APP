@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-
 		563647EE2F5D94D900BD1F07 /* LiveKitWebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 563647ED2F5D94D900BD1F07 /* LiveKitWebRTC */; };
 		DA5CAE3E2E82B13F00B33CD8 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = DA5CAE3D2E82B13F00B33CD8 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
@@ -281,7 +280,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.redsafe-tw.boen";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.redsafe-tw.boen.text";
 				PRODUCT_NAME = "RED Safe";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -315,7 +314,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.redsafe-tw.boen";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.redsafe-tw.boen.text";
 				PRODUCT_NAME = "RED Safe";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -1069,6 +1069,58 @@ struct IgnoredResult: Decodable {
     init(from decoder: Decoder) throws {}
 }
 
+// MARK: - Fall Event DTOs
+
+/// 跌倒事件列表項：包含縮圖與關鍵時間戳，供 FallEventHistoryView 渲染。
+struct FallEventSummary: Decodable, Identifiable, Sendable {
+    let eventId: String
+    let eventType: String        // FALL_CONFIRMED / FALL_RECOVERED / FALL_SELF_RECOVERED
+    let eventTime: String        // ISO-8601
+    let recoveredAt: String?
+    let cameraCustomName: String?
+    let cameraIp: String?
+    let thumbnailUrl: String?    // 相對路徑，例如 /api/ios/fall-events/snapshots/{snapshotId}
+
+    var id: String { eventId }
+}
+
+struct FallEventListResponse: Decodable, Sendable {
+    let events: [FallEventSummary]
+    let total: Int
+    let page: Int
+    let size: Int
+}
+
+/// 單張跌倒快照的中繼資料；`url` 為相對路徑，需經 APIClient.fallSnapshotURL 轉為絕對 URL。
+struct FallSnapshotMeta: Decodable, Identifiable, Sendable {
+    let snapshotId: String
+    let kind: String
+    let offsetMs: Int?
+    let mimeType: String?
+    let byteSize: Int?
+    let url: String              // /api/ios/fall-events/snapshots/{snapshotId}
+
+    var id: String { snapshotId }
+}
+
+struct FallEventDetail: Decodable, Sendable {
+    let eventId: String
+    let eventType: String
+    let eventTime: String
+    let recoveredAt: String?
+    let cameraCustomName: String?
+    let cameraIp: String?
+    let cameraMac: String?
+    let cameraIpcName: String?
+    let location: String?
+    let personId: Int?
+    let lyingSustainSeconds: Double?
+    let fallEnergy: Double?
+    let vlmConfirmed: Bool?
+    let vlmConfidence: Double?
+    let snapshots: [FallSnapshotMeta]
+}
+
 // MARK: - WebRTC DTOs
 
 struct WebRTCOfferPayload: Encodable {
@@ -1449,5 +1501,87 @@ extension APIClient {
             return response.errorCode
         }
         throw ApiError.http(status: 200, code: response.errorCode, message: nil, payload: nil)
+    }
+
+    // MARK: - Fall Events
+
+    /// 取得指定 Edge 的跌倒事件分頁列表，預設按事件時間倒序由後端回傳。
+    func fetchFallEvents(
+        edgeId: String,
+        page: Int = 0,
+        size: Int = 20
+    ) async throws -> FallEventListResponse {
+        let endpoint = Endpoint<FallEventListResponse>(
+            path: "/api/ios/fall-events",
+            method: .get,
+            queryItems: [
+                URLQueryItem(name: "edgeId", value: edgeId),
+                URLQueryItem(name: "page", value: String(page)),
+                URLQueryItem(name: "size", value: String(size))
+            ]
+        )
+        return try await send(endpoint)
+    }
+
+    /// 取得單一跌倒事件的詳細資料，包含所有快照中繼資訊。
+    func fetchFallEventDetail(eventId: String) async throws -> FallEventDetail {
+        let endpoint = Endpoint<FallEventDetail>(
+            path: "/api/ios/fall-events/\(eventId)",
+            method: .get
+        )
+        return try await send(endpoint)
+    }
+
+    /// 將後端回傳的相對路徑（如 /api/ios/fall-events/snapshots/...）轉為帶 baseURL 的絕對 URL。
+    /// 若後端日後改回傳完整 https URL（如 CDN）也能無痛 passthrough，避免重複拼接造成壞 URL。
+    func fallSnapshotURL(path: String) -> URL {
+        if let absolute = URL(string: path),
+           let scheme = absolute.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            return absolute
+        }
+        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        return configuration.baseURL.appendingPathComponent(trimmed)
+    }
+
+    /// 對需要 JWT 的二進位資源（如跌倒事件快照圖）做認證下載。
+    /// 內建 401 處理：呼叫 AuthManager.refreshAccessToken() 後自動重試一次，
+    /// 與 send(_:) 的 token-expired retry 行為一致，但不假設回應為 JSON。
+    func fetchAuthenticatedData(url: URL) async throws -> Data {
+        try await fetchAuthenticatedData(url: url, retryingOnAuthFailure: true)
+    }
+
+    private func fetchAuthenticatedData(
+        url: URL,
+        retryingOnAuthFailure: Bool
+    ) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        let token = await tokenProvider()
+        guard let token, !token.isEmpty else {
+            throw ApiError.missingToken
+        }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw ApiError.http(status: -1, code: nil, message: "無效的影像回應", payload: data)
+            }
+            if http.statusCode == 401 {
+                if retryingOnAuthFailure, await handleExpiredAccessToken() {
+                    return try await fetchAuthenticatedData(url: url, retryingOnAuthFailure: false)
+                }
+                throw ApiError.http(status: 401, code: ApiErrorCode(rawValue: "126"), message: nil, payload: data)
+            }
+            guard (200...299).contains(http.statusCode) else {
+                throw ApiError.http(status: http.statusCode, code: nil, message: nil, payload: data)
+            }
+            return data
+        } catch let error as ApiError {
+            throw error
+        } catch {
+            throw ApiError.transport(error)
+        }
     }
 }

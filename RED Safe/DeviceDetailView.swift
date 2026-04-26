@@ -124,6 +124,15 @@ struct DeviceDetailView: View {
                     }
                     .buttonStyle(.plain)
 
+                    Divider().padding(.leading, 52).background(Color.border)
+
+                    NavigationLink {
+                        FallEventHistoryView(edge: edge)
+                    } label: {
+                        rowContent(icon: "figure.fall", title: "跌倒事件紀錄")
+                    }
+                    .buttonStyle(.plain)
+
                 }
                 .padding(.vertical, 8)
             }
