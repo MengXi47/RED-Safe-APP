@@ -312,9 +312,9 @@ struct FallEventHistoryView: View {
         LazyVStack(spacing: 16) {
             ForEach(filteredEvents) { event in
                 NavigationLink {
-                    FallEventDetailView(eventId: event.eventId)
+                    FallEventDetailView(edgeId: edge.edgeId, eventId: event.eventId)
                 } label: {
-                    FallEventCard(event: event)
+                    FallEventCard(event: event, edgeId: edge.edgeId)
                 }
                 .buttonStyle(ScaleButtonStyle())
             }
@@ -350,6 +350,7 @@ struct FallEventHistoryView: View {
 
 private struct FallEventCard: View {
     let event: FallEventSummary
+    let edgeId: String
 
     var body: some View {
         let style = FallEventTypeStyle(rawValue: event.eventType)
@@ -390,7 +391,7 @@ private struct FallEventCard: View {
     private var thumbnailImage: some View {
         if let path = event.thumbnailUrl, !path.isEmpty {
             AuthenticatedAsyncImage(
-                url: APIClient.shared.fallSnapshotURL(path: path),
+                url: APIClient.shared.fallSnapshotURL(path: path, edgeId: edgeId),
                 cacheKey: "thumb-\(event.eventId)",
                 contentMode: .fill,
                 accessibilityLabel: accessibilityDescription

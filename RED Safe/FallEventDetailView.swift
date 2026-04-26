@@ -37,6 +37,7 @@ enum FallSnapshotKind: String {
 /// 跌倒事件詳情頁。
 /// 視覺上沿用 GlassContainer / AppFont / Color tokens，三事件配色嚴格對齊 backend EmailService。
 struct FallEventDetailView: View {
+    let edgeId: String
     let eventId: String
 
     @State private var detail: FallEventDetail?
@@ -133,7 +134,7 @@ struct FallEventDetailView: View {
         TabView(selection: $selectedIndex) {
             ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
                 AuthenticatedAsyncImage(
-                    url: APIClient.shared.fallSnapshotURL(path: snapshot.url),
+                    url: APIClient.shared.fallSnapshotURL(path: snapshot.url, edgeId: edgeId),
                     cacheKey: snapshot.snapshotId,
                     contentMode: .fit,
                     accessibilityLabel: "\(FallSnapshotKind(rawValue: snapshot.kind).displayName)快照"
@@ -196,7 +197,7 @@ struct FallEventDetailView: View {
                             }
                         } label: {
                             AuthenticatedAsyncImage(
-                                url: APIClient.shared.fallSnapshotURL(path: snapshot.url),
+                                url: APIClient.shared.fallSnapshotURL(path: snapshot.url, edgeId: edgeId),
                                 cacheKey: snapshot.snapshotId,
                                 contentMode: .fill,
                                 accessibilityLabel: "\(FallSnapshotKind(rawValue: snapshot.kind).displayName)縮圖"
@@ -396,7 +397,7 @@ struct FallEventDetailView: View {
         loadError = nil
         defer { isLoading = false }
         do {
-            let result = try await APIClient.shared.fetchFallEventDetail(eventId: eventId)
+            let result = try await APIClient.shared.fetchFallEventDetail(edgeId: edgeId, eventId: eventId)
             detail = result
             selectedIndex = 0
         } catch {

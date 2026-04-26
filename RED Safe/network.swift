@@ -1527,24 +1527,34 @@ extension APIClient {
     }
 
     /// 取得單一跌倒事件的詳細資料，包含所有快照中繼資訊。
-    func fetchFallEventDetail(eventId: String) async throws -> FallEventDetail {
+    /// Backend 強制要求 `edgeId` query 參數先驗綁定，缺失會回 errorCode "125"。
+    func fetchFallEventDetail(edgeId: String, eventId: String) async throws -> FallEventDetail {
         let endpoint = Endpoint<FallEventDetail>(
             path: "/api/ios/fall-events/\(eventId)",
-            method: .get
+            method: .get,
+            queryItems: [URLQueryItem(name: "edgeId", value: edgeId)]
         )
         return try await send(endpoint)
     }
 
     /// 將後端回傳的相對路徑（如 /api/ios/fall-events/snapshots/...）轉為帶 baseURL 的絕對 URL。
+    /// Backend snapshot 端點強制要求 `edgeId` query，呼叫端必須帶綁定的 edge id。
     /// 若後端日後改回傳完整 https URL（如 CDN）也能無痛 passthrough，避免重複拼接造成壞 URL。
-    func fallSnapshotURL(path: String) -> URL {
+    func fallSnapshotURL(path: String, edgeId: String) -> URL {
         if let absolute = URL(string: path),
            let scheme = absolute.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
             return absolute
         }
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        return configuration.baseURL.appendingPathComponent(trimmed)
+        let base = configuration.baseURL.appendingPathComponent(trimmed)
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return base
+        }
+        var items = components.queryItems ?? []
+        items.append(URLQueryItem(name: "edgeId", value: edgeId))
+        components.queryItems = items
+        return components.url ?? base
     }
 
     /// 對需要 JWT 的二進位資源（如跌倒事件快照圖）做認證下載。
