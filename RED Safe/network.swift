@@ -1626,15 +1626,32 @@ extension APIClient {
         request.httpMethod = "GET"
         let token = await tokenProvider()
         guard let token, !token.isEmpty else {
+#if DEBUG
+            print("🖼️ [IMG] missingToken ← GET \(url.absoluteString)")
+#endif
             throw ApiError.missingToken
         }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
+#if DEBUG
+        print("\n🖼️ [IMG] Request GET \(url.absoluteString)")
+#endif
+
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
+#if DEBUG
+                print("🖼️ [IMG] non-HTTP response ← GET \(url.absoluteString)")
+#endif
                 throw ApiError.http(status: -1, code: nil, message: "無效的影像回應", payload: data)
             }
+#if DEBUG
+            let mime = http.value(forHTTPHeaderField: "Content-Type") ?? "<no content-type>"
+            print("🖼️ [IMG] Response \(http.statusCode) (\(data.count) bytes, \(mime)) ← GET \(url.absoluteString)")
+            if !(200...299).contains(http.statusCode), let body = String(data: data, encoding: .utf8) {
+                print("🖼️ [IMG] Error body: \(body)")
+            }
+#endif
             if http.statusCode == 401 {
                 if retryingOnAuthFailure, await handleExpiredAccessToken() {
                     return try await fetchAuthenticatedData(url: url, retryingOnAuthFailure: false)
@@ -1648,6 +1665,9 @@ extension APIClient {
         } catch let error as ApiError {
             throw error
         } catch {
+#if DEBUG
+            print("🖼️ [IMG] transport error ← GET \(url.absoluteString): \(error)")
+#endif
             throw ApiError.transport(error)
         }
     }

@@ -77,14 +77,25 @@ struct AuthenticatedAsyncImage<Placeholder: View>: View {
 
     private func loadIfNeeded() async {
         guard let url else {
+#if DEBUG
+            print("🖼️ [AAI] task fired but url=nil (cacheKey=\(cacheKey ?? "<nil>"))")
+#endif
             didFail = true
             return
         }
-        guard !isLoading, image == nil else { return }
+        guard !isLoading, image == nil else {
+#if DEBUG
+            print("🖼️ [AAI] skip (isLoading=\(isLoading), hasImage=\(image != nil)) ← \(url.absoluteString)")
+#endif
+            return
+        }
 
         // 先查記憶體快取
         if let key = resolvedCacheKey,
            let cached = await FallSnapshotImageCache.shared.image(for: key) {
+#if DEBUG
+            print("🖼️ [AAI] cache hit key=\(key) ← \(url.absoluteString)")
+#endif
             image = cached
             return
         }
@@ -96,6 +107,9 @@ struct AuthenticatedAsyncImage<Placeholder: View>: View {
         do {
             let data = try await APIClient.shared.fetchAuthenticatedData(url: url)
             guard let decoded = UIImage(data: data) else {
+#if DEBUG
+                print("🖼️ [AAI] UIImage decode FAILED (\(data.count) bytes) ← \(url.absoluteString)")
+#endif
                 didFail = true
                 return
             }
@@ -104,6 +118,9 @@ struct AuthenticatedAsyncImage<Placeholder: View>: View {
                 await FallSnapshotImageCache.shared.set(decoded, for: key)
             }
         } catch {
+#if DEBUG
+            print("🖼️ [AAI] fetch FAILED ← \(url.absoluteString): \(error)")
+#endif
             didFail = true
         }
     }
