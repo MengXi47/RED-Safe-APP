@@ -96,10 +96,15 @@ struct FallEventHistoryView: View {
     let edge: EdgeSummary
 
     @State private var events: [FallEventSummary] = []
+    @State private var loadedEventIds: Set<String> = []
+    @State private var currentPage: Int = 0
     @State private var totalCount: Int = 0
+    @State private var hasMore: Bool = true
     @State private var isLoading = false
+    @State private var isLoadingMore = false
     @State private var hasLoadedOnce = false
     @State private var loadError: String?
+    @State private var loadMoreError: String?
     @State private var filter: EventFilter = .all
 
     /// 事件類型篩選；UI 只在後端資料載入後依分類顯示。
@@ -141,8 +146,8 @@ struct FallEventHistoryView: View {
         .ignoresSafeArea(edges: .bottom)
         .navigationTitle("跌倒事件紀錄")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadEvents() }
-        .refreshable { await loadEvents() }
+        .task { if !hasLoadedOnce { await reload() } }
+        .refreshable { await reload() }
     }
 
     // MARK: Header
@@ -256,7 +261,7 @@ struct FallEventHistoryView: View {
                     .foregroundStyle(Color.textSecondary)
                     .multilineTextAlignment(.center)
                 Button {
-                    Task { await loadEvents() }
+                    Task { await reload() }
                 } label: {
                     Text("重試")
                         .font(.buttonText)
@@ -301,11 +306,7 @@ struct FallEventHistoryView: View {
         if events.isEmpty {
             return "當 Edge 偵測到跌倒後會自動上傳並顯示在此。"
         }
-        if totalCount > events.count {
-            // TODO: 完整 pagination — 目前僅載入最新一頁。
-            return "目前僅顯示最新 \(events.count) 筆(共 \(totalCount) 筆),如需更早期事件請聯繫支援。"
-        }
-        return "可切換上方篩選查看其他類型事件。"
+        return "可切換上方篩選查看其他類型事件,或下拉重新整理。"
     }
 
     private var list: some View {
@@ -317,17 +318,68 @@ struct FallEventHistoryView: View {
                     FallEventCard(event: event, edgeId: edge.edgeId)
                 }
                 .buttonStyle(ScaleButtonStyle())
+                .onAppear {
+                    // 觸發條件用「未篩選」清單的最後一筆 eventId,
+                    // 避免使用者切換篩選後該分類資料較少而提早卡死無法繼續分頁。
+                    if event.eventId == events.last?.eventId {
+                        Task { await loadMoreIfNeeded() }
+                    }
+                }
             }
+
+            listFooter
+        }
+    }
+
+    @ViewBuilder
+    private var listFooter: some View {
+        if isLoadingMore {
+            HStack(spacing: 10) {
+                ProgressView().tint(Color.primaryBrand)
+                Text("載入更多事件中…")
+                    .font(.captionText)
+                    .foregroundStyle(Color.textSecondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+        } else if let loadMoreError {
+            VStack(spacing: 8) {
+                Text("載入更多失敗:\(loadMoreError)")
+                    .font(.captionText)
+                    .foregroundStyle(Color.errorRed)
+                    .multilineTextAlignment(.center)
+                Button {
+                    Task { await loadMoreIfNeeded(force: true) }
+                } label: {
+                    Text("重試")
+                        .font(.captionText.weight(.semibold))
+                        .foregroundStyle(Color.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .background(Color.primaryBrand)
+                        .clipShape(Capsule())
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+        } else if !hasMore && !events.isEmpty {
+            Text("已顯示全部 \(events.count) 筆事件")
+                .font(.captionText)
+                .foregroundStyle(Color.textTertiary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
         }
     }
 
     // MARK: Loading
 
-    private func loadEvents() async {
+    /// 重設分頁狀態並重新從 page 0 拉取,供 `.task` 初始化與 `.refreshable` 下拉刷新使用。
+    private func reload() async {
         // 並發守衛:.task 與 .refreshable 可能同時觸發,避免雙重請求造成資料閃爍。
         guard !isLoading else { return }
         isLoading = true
         loadError = nil
+        loadMoreError = nil
         defer {
             isLoading = false
             hasLoadedOnce = true
@@ -338,11 +390,52 @@ struct FallEventHistoryView: View {
                 page: 0,
                 size: pageSize
             )
+            // 重設後一次性覆蓋,避免上一輪殘留資料造成 UI 閃爍。
             events = response.events
+            loadedEventIds = Set(response.events.map(\.eventId))
             totalCount = response.total
+            currentPage = 0
+            hasMore = computeHasMore(loaded: events.count, total: response.total, lastBatch: response.events.count)
         } catch {
             loadError = error.localizedDescription
         }
+    }
+
+    /// 載入下一頁。觸發點為列表最後一筆的 onAppear,並由 `currentPage`/`hasMore`/`isLoadingMore` 三者守衛。
+    /// `force=true` 用於使用者點擊「重試」時繞過 `loadMoreError` 的暫停狀態。
+    private func loadMoreIfNeeded(force: Bool = false) async {
+        guard hasLoadedOnce, !isLoading, !isLoadingMore, hasMore else { return }
+        guard force || loadMoreError == nil else { return }
+
+        isLoadingMore = true
+        loadMoreError = nil
+        defer { isLoadingMore = false }
+
+        let nextPage = currentPage + 1
+        do {
+            let response = try await APIClient.shared.fetchFallEvents(
+                edgeId: edge.edgeId,
+                page: nextPage,
+                size: pageSize
+            )
+            // 用 Set 去重:後端理論上分頁不重複,但網路重試/競態下偶爾會重複,
+            // 為避免 SwiftUI ForEach 因 id 衝突 crash 而以本地 set 為準。
+            let newOnes = response.events.filter { !loadedEventIds.contains($0.eventId) }
+            events.append(contentsOf: newOnes)
+            loadedEventIds.formUnion(newOnes.map(\.eventId))
+            totalCount = response.total
+            currentPage = nextPage
+            hasMore = computeHasMore(loaded: events.count, total: response.total, lastBatch: response.events.count)
+        } catch {
+            loadMoreError = error.localizedDescription
+        }
+    }
+
+    /// 判斷是否還有更多頁:後端提供 total 時優先以 total 為準,
+    /// 若後端回傳異常(total=0 但仍有資料)則 fallback 用「本批是否已小於 pageSize」推測。
+    private func computeHasMore(loaded: Int, total: Int, lastBatch: Int) -> Bool {
+        if total > 0 { return loaded < total }
+        return lastBatch >= pageSize
     }
 }
 
