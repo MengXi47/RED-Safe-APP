@@ -299,37 +299,8 @@ struct FallEventDetailView: View {
                 if let person = detail.personId {
                     infoRow(label: "人員 ID", value: "#\(person)")
                 }
-                vlmRow(detail: detail)
             }
         }
-    }
-
-    private func vlmRow(detail: FallEventDetail) -> some View {
-        let confirmed = detail.vlmConfirmed ?? false
-        let confidencePct: String? = detail.vlmConfidence.map { String(format: "%.0f%%", $0 * 100) }
-        let label: String
-        let color: Color
-        let icon: String
-        if confirmed {
-            label = confidencePct.map { "AI 已確認（\($0)）" } ?? "AI 已確認"
-            color = Color(red: 0x0E / 255, green: 0x93 / 255, blue: 0x84 / 255)
-            icon = "checkmark.seal.fill"
-        } else {
-            label = "未經 AI 二次確認"
-            color = Color(red: 0x47 / 255, green: 0x54 / 255, blue: 0x67 / 255)
-            icon = "questionmark.circle"
-        }
-        return HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-            Text(label)
-                .font(.bodyMedium.weight(.medium))
-                .foregroundStyle(color)
-            Spacer()
-        }
-        .padding(12)
-        .background(color.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: - Sub-elements

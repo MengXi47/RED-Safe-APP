@@ -109,15 +109,6 @@ struct DeviceDetailView: View {
                     Divider().padding(.leading, 52).background(Color.border)
 
                     NavigationLink {
-                        GeminiConfigView(edge: edge)
-                    } label: {
-                        rowContent(icon: "brain.head.profile", title: "AI 輔助偵測")
-                    }
-                    .buttonStyle(.plain)
-
-                    Divider().padding(.leading, 52).background(Color.border)
-
-                    NavigationLink {
                         LiveStreamView(edge: edge)
                     } label: {
                         rowContent(icon: "video.fill", title: "即時影像")

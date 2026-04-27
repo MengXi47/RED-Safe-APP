@@ -1063,16 +1063,6 @@ struct BedSnapshotDTO: Decodable {
     let dataUrl: String?
 }
 
-struct GeminiConfigDTO: Decodable {
-    let gemini: GeminiSettings
-
-    struct GeminiSettings: Decodable {
-        let enabled: Bool
-        let apiKey: String
-        let model: String
-    }
-}
-
 // MARK: - Detection Policy Payloads
 
 struct IPAddressPayload: Encodable {
@@ -1113,12 +1103,6 @@ struct UpdateBedRoiPayload: Encodable {
         let quietStart: String
         let quietEnd: String
     }
-}
-
-struct UpdateGeminiPayload: Encodable {
-    let enabled: Bool
-    let apiKey: String
-    let model: String
 }
 
 /// A Decodable type that accepts any JSON value, used for command results where only the status matters.
@@ -1173,8 +1157,6 @@ struct FallEventDetail: Decodable, Sendable {
     let personId: Int?
     let lyingSustainSeconds: Double?
     let fallEnergy: Double?
-    let vlmConfirmed: Bool?
-    let vlmConfidence: Double?
     let snapshots: [FallSnapshotMeta]
 }
 
