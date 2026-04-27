@@ -259,19 +259,6 @@ private struct LicenseCard: View {
     }
 
     private func formatDate(_ dateString: String) -> String {
-        let isoFormatter = ISO8601DateFormatter()
-        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let displayFormatter = DateFormatter()
-        displayFormatter.dateFormat = "yyyy/MM/dd HH:mm"
-        displayFormatter.timeZone = TimeZone(identifier: "Asia/Taipei")
-
-        if let date = isoFormatter.date(from: dateString) {
-            return displayFormatter.string(from: date)
-        }
-        isoFormatter.formatOptions = [.withInternetDateTime]
-        if let date = isoFormatter.date(from: dateString) {
-            return displayFormatter.string(from: date)
-        }
-        return dateString
+        RedSafeDateFormatter.displayAbsolute(from: dateString)
     }
 }

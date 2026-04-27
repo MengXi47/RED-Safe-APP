@@ -46,27 +46,7 @@ enum FallEventTypeStyle {
 
 @MainActor
 enum FallEventDateFormat {
-    /// 後端 ISO-8601；同時容忍是否帶毫秒。
-    static let isoParser: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
-    static let isoParserNoMs: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    static let absoluteFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_Hant_TW")
-        f.timeZone = TimeZone(identifier: "Asia/Taipei")
-        f.dateFormat = "yyyy/MM/dd HH:mm"
-        return f
-    }()
-
+    /// 跌倒列表/詳情共用的「相對時間」格式化器,例如「2 小時前」。時區隨 system,只影響相對描述用詞。
     static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
         f.locale = Locale(identifier: "zh_Hant_TW")
@@ -74,15 +54,12 @@ enum FallEventDateFormat {
         return f
     }()
 
-    static func parse(_ iso: String) -> Date? {
-        if let date = isoParser.date(from: iso) { return date }
-        return isoParserNoMs.date(from: iso)
-    }
-
+    /// 將 ISO-8601 時間轉為「相對 + 絕對」雙欄顯示;絕對時間為 Asia/Taipei,
+    /// 共用 `RedSafeDateFormatter` 的解析與格式化器。
     static func displayPair(for iso: String, now: Date = Date()) -> (relative: String, absolute: String) {
-        guard let date = parse(iso) else { return ("—", iso) }
+        guard let date = RedSafeDateFormatter.parseISO(iso) else { return ("—", iso) }
         let relative = relativeFormatter.localizedString(for: date, relativeTo: now)
-        let absolute = absoluteFormatter.string(from: date)
+        let absolute = RedSafeDateFormatter.absoluteFormatter.string(from: date)
         return (relative, absolute)
     }
 }
