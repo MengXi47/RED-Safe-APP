@@ -83,6 +83,10 @@ struct FallEventDetailView: View {
         .navigationTitle("事件詳情")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        .onAppear {
+            // 進入詳情頁即視為已讀;不等載入完成,避免讀取失敗時無法標記。
+            FallEventReadStore.markRead(eventId)
+        }
     }
 
     // MARK: - Banner

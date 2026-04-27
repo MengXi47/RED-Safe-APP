@@ -107,6 +107,9 @@ struct FallEventHistoryView: View {
     @State private var loadMoreError: String?
     @State private var filter: EventFilter = .all
 
+    /// 觀察 shared 已讀狀態,讓詳情頁標記後列表的紅點可即時消失。
+    @State private var readStore = FallEventReadStore.shared
+
     /// 事件類型篩選；UI 只在後端資料載入後依分類顯示。
     enum EventFilter: String, CaseIterable, Identifiable {
         case all = "全部"
@@ -146,8 +149,24 @@ struct FallEventHistoryView: View {
         .ignoresSafeArea(edges: .bottom)
         .navigationTitle("跌倒事件紀錄")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { markAllReadToolbar }
         .task { if !hasLoadedOnce { await reload() } }
         .refreshable { await reload() }
+    }
+
+    /// 「全部標已讀」按鈕:目前已載入頁中尚未已讀的事件全數寫入本地。未載入頁不影響。
+    @ToolbarContentBuilder
+    private var markAllReadToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            let unreadIds = events.filter { !readStore.readIds.contains($0.eventId) }.map(\.eventId)
+            Button {
+                FallEventReadStore.markAllRead(unreadIds)
+            } label: {
+                Image(systemName: "checkmark.circle")
+                    .accessibilityLabel("全部標為已讀")
+            }
+            .disabled(unreadIds.isEmpty)
+        }
     }
 
     // MARK: Header
@@ -315,7 +334,11 @@ struct FallEventHistoryView: View {
                 NavigationLink {
                     FallEventDetailView(edgeId: edge.edgeId, eventId: event.eventId)
                 } label: {
-                    FallEventCard(event: event, edgeId: edge.edgeId)
+                    FallEventCard(
+                        event: event,
+                        edgeId: edge.edgeId,
+                        isUnread: !readStore.readIds.contains(event.eventId)
+                    )
                 }
                 .buttonStyle(ScaleButtonStyle())
                 .onAppear {
@@ -444,6 +467,7 @@ struct FallEventHistoryView: View {
 private struct FallEventCard: View {
     let event: FallEventSummary
     let edgeId: String
+    let isUnread: Bool
 
     var body: some View {
         let style = FallEventTypeStyle(rawValue: event.eventType)
@@ -502,9 +526,16 @@ private struct FallEventCard: View {
 
     private func metadata(title: String, time: (relative: String, absolute: String), style: FallEventTypeStyle) -> some View {
         HStack(alignment: .center, spacing: 12) {
+            // 未讀紅點:6pt 圓點對齊主文字 baseline,提供明確視覺差異而不擾動既有版面。
+            if isUnread {
+                Circle()
+                    .fill(Color(red: 0xD9 / 255, green: 0x2D / 255, blue: 0x20 / 255))
+                    .frame(width: 8, height: 8)
+                    .accessibilityLabel("未讀")
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.bodyLarge.weight(.semibold))
+                    .font(.bodyLarge.weight(isUnread ? .bold : .semibold))
                     .foregroundStyle(Color.textPrimary)
                     .lineLimit(1)
                 HStack(spacing: 8) {
