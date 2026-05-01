@@ -7,10 +7,12 @@ struct AppTextField: View {
     var isSecure: Bool = false
     var keyboardType: UIKeyboardType = .default
     var errorMessage: String? = nil
-    
-    @State private var isFocused: Bool = false
+
+    // 真實鍵盤焦點 — 取代舊版 @State isFocused 與 .onTapGesture 的拼湊做法，
+    // 那會吞掉 TextField 的第一次點擊，導致需要連點兩三下才能輸入。
+    @FocusState private var isFocused: Bool
     @State private var showPassword: Bool = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
@@ -20,17 +22,19 @@ struct AppTextField: View {
                         .font(.bodyMedium)
                         .frame(width: 20)
                 }
-                
+
                 if isSecure && !showPassword {
                     SecureField(title, text: $text)
                         .textContentType(.password)
+                        .focused($isFocused)
                 } else {
                     TextField(title, text: $text)
                         .keyboardType(keyboardType)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                        .focused($isFocused)
                 }
-                
+
                 if isSecure {
                     Button {
                         showPassword.toggle()
@@ -38,6 +42,7 @@ struct AppTextField: View {
                         Image(systemName: showPassword ? "eye.slash" : "eye")
                             .foregroundColor(.textSecondary)
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.vertical, 16)
@@ -48,13 +53,18 @@ struct AppTextField: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(errorMessage != nil ? Color.errorRed : (isFocused ? Color.primaryBrand : Color.border), lineWidth: 1.5)
+                    .stroke(
+                        errorMessage != nil
+                            ? Color.errorRed
+                            : (isFocused ? Color.primaryBrand : Color.border),
+                        lineWidth: 1.5
+                    )
             )
-            // Using onEditingChanged modification wrapper if needed, or simply FocusState in parent. 
-            // For simplicity here, we rely on parent FocusState or just visual feedback.
-            // But to track internal focus for color:
-            .onTapGesture { isFocused = true } // Simple fallback
-            
+            // 點擊整個欄位內距時也聚焦到輸入框；TextField 本身的 hit-test 優先，
+            // 所以直接點到輸入區域時不會走到這裡，不會搶走第一次點擊。
+            .contentShape(Rectangle())
+            .onTapGesture { isFocused = true }
+
             if let errorMessage {
                 Text(errorMessage)
                     .font(.captionText)
