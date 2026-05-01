@@ -696,14 +696,16 @@ struct EdgeCommandResponseDTO: Decodable {
     let traceId: String
 }
 
+// 掃描回應 — Core ipcscan/scan_executor.cc 輸出短鍵 ip/mac/name。
 struct IPCameraDeviceDTO: Decodable, Identifiable, Hashable {
     let ip: String
     let mac: String
     let name: String
 
-    var id: String { "\(mac)#\(ip)" }
+    var id: String { "\(mac.lowercased())#\(ip.lowercased())" }
 }
 
+// 已綁定攝影機 — Core sql/Sql.cc IpcInfo 儲存命名 ipAddress/macAddress/...
 struct AddedIPCameraDTO: Decodable, Identifiable, Hashable {
     let ipcPassword: String?
     let ipcAccount: String?
@@ -712,7 +714,7 @@ struct AddedIPCameraDTO: Decodable, Identifiable, Hashable {
     let macAddress: String
     let ipAddress: String
 
-    var id: String { "\(macAddress)#\(ipAddress)" }
+    var id: String { "\(macAddress.lowercased())#\(ipAddress.lowercased())" }
 
     private enum CodingKeys: String, CodingKey {
         case ipcPassword
@@ -751,9 +753,19 @@ struct AddedIPCameraDTO: Decodable, Identifiable, Hashable {
     }
 }
 
+// SET_IPC_INFO (104) — 與 Core 對齊使用 ipAddress/macAddress 命名（macAddress 選填，手動新增可省）。
 struct AddIPCameraCommandPayload: Encodable {
-    let ip: String
-    let mac: String
+    let ipAddress: String
+    let macAddress: String?
+    let ipcName: String
+    let customName: String
+    let ipcAccount: String
+    let ipcPassword: String
+}
+
+// UPDATE_IPC_INFO (114) — Core sql::IpcInfo::update：密碼空字串 = 沿用既有。
+struct UpdateIPCameraCommandPayload: Encodable {
+    let ipAddress: String
     let ipcName: String
     let customName: String
     let ipcAccount: String
@@ -768,8 +780,9 @@ struct AddIPCameraResultDTO: Decodable {
     }
 }
 
+// DEL_IPC_INFO (105) — 對齊 Core ipAddress 主鍵；級聯移除 fall/inactivity/bedROI policies。
 struct RemoveIPCameraCommandPayload: Encodable {
-    let ip: String
+    let ipAddress: String
 }
 
 struct EdgeNetworkConfigDTO: Decodable, Hashable {
