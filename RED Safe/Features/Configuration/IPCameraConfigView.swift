@@ -301,39 +301,27 @@ struct IPCameraConfigView: View {
 
     // MARK: - 排序 / 顯示規則
 
-    /// 搜尋結果排序：A-Z 在前、0-9 其次、其他字元最後；同類別內以 case-insensitive 排序。
+    /// 搜尋結果排序：以 IP 由小到大（0-9）。IPv4 轉 32-bit 整數，
+    /// 確保 "192.168.1.10" 排在 "192.168.1.2" 之後而不是字典序之前；
+    /// 非 IPv4 退回 localizedStandardCompare 自然排序維持穩定。
     private var sortedScanResults: [IPCameraDeviceDTO] {
         scanResults.sorted { lhs, rhs in
-            let lk = sortKey(for: scanDisplayName(for: lhs))
-            let rk = sortKey(for: scanDisplayName(for: rhs))
-            if lk.bucket != rk.bucket { return lk.bucket < rk.bucket }
-            if lk.normalized != rk.normalized {
-                return lk.normalized.localizedStandardCompare(rk.normalized) == .orderedAscending
-            }
-            // 同名 fallback 用 IP 穩定排序
+            let lk = ipSortKey(lhs.ip)
+            let rk = ipSortKey(rhs.ip)
+            if lk != rk { return lk < rk }
             return lhs.ip.localizedStandardCompare(rhs.ip) == .orderedAscending
         }
     }
 
-    private struct ScanSortKey {
-        let bucket: Int   // 0 = A-Z, 1 = 0-9, 2 = 其他
-        let normalized: String
-    }
-
-    private func sortKey(for name: String) -> ScanSortKey {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = trimmed.unicodeScalars.first else {
-            return ScanSortKey(bucket: 2, normalized: trimmed.lowercased())
+    private func ipSortKey(_ ip: String) -> UInt64 {
+        let parts = ip.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".")
+        guard parts.count == 4 else { return UInt64.max }
+        var acc: UInt64 = 0
+        for part in parts {
+            guard let n = UInt64(part), n <= 255 else { return UInt64.max }
+            acc = acc * 256 + n
         }
-        let bucket: Int
-        if CharacterSet.letters.contains(first) {
-            bucket = 0
-        } else if CharacterSet.decimalDigits.contains(first) {
-            bucket = 1
-        } else {
-            bucket = 2
-        }
-        return ScanSortKey(bucket: bucket, normalized: trimmed.lowercased())
+        return acc
     }
 
     /// 已綁定攝影機顯示規則 — 對齊 Core resolveBoundName：customName 為主，否則「未命名攝影機」。
