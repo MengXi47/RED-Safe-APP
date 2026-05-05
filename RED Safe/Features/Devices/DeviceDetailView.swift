@@ -124,6 +124,15 @@ struct DeviceDetailView: View {
                     }
                     .buttonStyle(.plain)
 
+                    Divider().padding(.leading, 52).background(Color.border)
+
+                    NavigationLink {
+                        InactivityEventHistoryView(edge: edge)
+                    } label: {
+                        rowContent(icon: "figure.stand", title: "長時間靜止事件")
+                    }
+                    .buttonStyle(.plain)
+
                 }
                 .padding(.vertical, 8)
             }

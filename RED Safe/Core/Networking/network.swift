@@ -1173,6 +1173,42 @@ struct FallEventDetail: Decodable, Sendable {
     let snapshots: [FallSnapshotMeta]
 }
 
+// MARK: - Inactivity Event DTOs
+
+/// 長時間靜止事件列表項;後端只送觸發事件(無 RECOVERED 分流),欄位較 fall 精簡。
+struct InactivityEventSummary: Decodable, Identifiable, Sendable {
+    let eventId: String
+    let eventTime: String        // ISO-8601
+    let cameraCustomName: String?
+    let cameraIp: String?
+    let idleSeconds: Double
+    let thumbnailUrl: String?    // 相對路徑,例如 /api/ios/inactivity-events/snapshots/{snapshotId}
+
+    var id: String { eventId }
+}
+
+struct InactivityEventListResponse: Decodable, Sendable {
+    let events: [InactivityEventSummary]
+    let total: Int
+    let page: Int
+    let size: Int
+}
+
+/// 靜止事件詳情;與 fall 共用 `FallSnapshotMeta`(schema 一致)。
+/// 不含 fall 特有的 lyingSustainSeconds / fallEnergy / recoveredAt。
+struct InactivityEventDetail: Decodable, Sendable {
+    let eventId: String
+    let eventTime: String
+    let cameraCustomName: String?
+    let cameraIp: String?
+    let cameraMac: String?
+    let cameraIpcName: String?
+    let location: String?
+    let personId: Int?
+    let idleSeconds: Double
+    let snapshots: [FallSnapshotMeta]
+}
+
 // MARK: - WebRTC DTOs
 
 struct WebRTCOfferPayload: Encodable {
@@ -1590,6 +1626,57 @@ extension APIClient {
     /// Backend snapshot 端點強制要求 `edgeId` query，呼叫端必須帶綁定的 edge id。
     /// 若後端日後改回傳完整 https URL（如 CDN）也能無痛 passthrough，避免重複拼接造成壞 URL。
     func fallSnapshotURL(path: String, edgeId: String) -> URL {
+        if let absolute = URL(string: path),
+           let scheme = absolute.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            return absolute
+        }
+        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        let base = configuration.baseURL.appendingPathComponent(trimmed)
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return base
+        }
+        var items = components.queryItems ?? []
+        items.append(URLQueryItem(name: "edgeId", value: edgeId))
+        components.queryItems = items
+        return components.url ?? base
+    }
+
+    // MARK: - Inactivity Events
+
+    /// 取得指定 Edge 的長時間靜止事件分頁列表;後端按 event_time 倒序回傳。
+    func fetchInactivityEvents(
+        edgeId: String,
+        page: Int = 0,
+        size: Int = 20
+    ) async throws -> InactivityEventListResponse {
+        let endpoint = Endpoint<InactivityEventListResponse>(
+            path: "/api/ios/inactivity-events",
+            method: .get,
+            queryItems: [
+                URLQueryItem(name: "edgeId", value: edgeId),
+                URLQueryItem(name: "page", value: String(page)),
+                URLQueryItem(name: "size", value: String(size))
+            ]
+        )
+        return try await send(endpoint)
+    }
+
+    /// 取得單一靜止事件的詳細資料,包含 3 張快照(-2s / 0s / +2s)中繼資訊。
+    /// Backend 強制要求 `edgeId` query 參數先驗綁定。
+    func fetchInactivityEventDetail(edgeId: String, eventId: String) async throws -> InactivityEventDetail {
+        let endpoint = Endpoint<InactivityEventDetail>(
+            path: "/api/ios/inactivity-events/\(eventId)",
+            method: .get,
+            queryItems: [URLQueryItem(name: "edgeId", value: edgeId)]
+        )
+        return try await send(endpoint)
+    }
+
+    /// 將後端回傳的相對路徑(如 /api/ios/inactivity-events/snapshots/...)轉為帶 baseURL 的絕對 URL。
+    /// 行為與 `fallSnapshotURL` 相同:遇到完整 https URL 直接 passthrough,
+    /// 並補上後端必要的 `edgeId` query 參數。
+    func inactivitySnapshotURL(path: String, edgeId: String) -> URL {
         if let absolute = URL(string: path),
            let scheme = absolute.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {
