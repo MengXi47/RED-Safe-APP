@@ -1209,6 +1209,41 @@ struct InactivityEventDetail: Decodable, Sendable {
     let snapshots: [FallSnapshotMeta]
 }
 
+// MARK: - Bed Exit Event DTOs
+
+/// 夜間離床事件列表項;後端在 quiet window 內偵測到離床時觸發,單次事件無 RECOVERED 分流。
+struct BedExitEventSummary: Decodable, Identifiable, Sendable {
+    let eventId: String
+    let eventTime: String        // ISO-8601
+    let cameraCustomName: String?
+    let cameraIp: String?
+    let exitRatio: Double?       // BedExitDetector outside_ratio (0.0–1.0, ≥ 0.75 觸發)
+    let thumbnailUrl: String?    // 相對路徑,例如 /api/ios/bed-exit-events/snapshots/{snapshotId}
+
+    var id: String { eventId }
+}
+
+struct BedExitEventListResponse: Decodable, Sendable {
+    let events: [BedExitEventSummary]
+    let total: Int
+    let page: Int
+    let size: Int
+}
+
+/// 夜間離床事件詳情;與 inactivity 共用 `FallSnapshotMeta`(snapshot schema 一致)。
+struct BedExitEventDetail: Decodable, Sendable {
+    let eventId: String
+    let eventTime: String
+    let cameraCustomName: String?
+    let cameraIp: String?
+    let cameraMac: String?
+    let cameraIpcName: String?
+    let location: String?
+    let personId: Int?
+    let exitRatio: Double?
+    let snapshots: [FallSnapshotMeta]
+}
+
 // MARK: - WebRTC DTOs
 
 struct WebRTCOfferPayload: Encodable {
@@ -1677,6 +1712,54 @@ extension APIClient {
     /// 行為與 `fallSnapshotURL` 相同:遇到完整 https URL 直接 passthrough,
     /// 並補上後端必要的 `edgeId` query 參數。
     func inactivitySnapshotURL(path: String, edgeId: String) -> URL {
+        if let absolute = URL(string: path),
+           let scheme = absolute.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            return absolute
+        }
+        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        let base = configuration.baseURL.appendingPathComponent(trimmed)
+        guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
+            return base
+        }
+        var items = components.queryItems ?? []
+        items.append(URLQueryItem(name: "edgeId", value: edgeId))
+        components.queryItems = items
+        return components.url ?? base
+    }
+
+    // MARK: - Bed Exit Events
+
+    /// 取得指定 Edge 的夜間離床事件分頁列表;後端按 event_time 倒序回傳。
+    func fetchBedExitEvents(
+        edgeId: String,
+        page: Int = 0,
+        size: Int = 20
+    ) async throws -> BedExitEventListResponse {
+        let endpoint = Endpoint<BedExitEventListResponse>(
+            path: "/api/ios/bed-exit-events",
+            method: .get,
+            queryItems: [
+                URLQueryItem(name: "edgeId", value: edgeId),
+                URLQueryItem(name: "page", value: String(page)),
+                URLQueryItem(name: "size", value: String(size))
+            ]
+        )
+        return try await send(endpoint)
+    }
+
+    /// 取得單一夜間離床事件的詳細資料,包含 3 張快照(-1.5s / 0s / +2s)中繼資訊。
+    func fetchBedExitEventDetail(edgeId: String, eventId: String) async throws -> BedExitEventDetail {
+        let endpoint = Endpoint<BedExitEventDetail>(
+            path: "/api/ios/bed-exit-events/\(eventId)",
+            method: .get,
+            queryItems: [URLQueryItem(name: "edgeId", value: edgeId)]
+        )
+        return try await send(endpoint)
+    }
+
+    /// 將後端回傳的相對路徑(如 /api/ios/bed-exit-events/snapshots/...)轉為帶 baseURL 的絕對 URL。
+    func bedExitSnapshotURL(path: String, edgeId: String) -> URL {
         if let absolute = URL(string: path),
            let scheme = absolute.scheme?.lowercased(),
            scheme == "http" || scheme == "https" {

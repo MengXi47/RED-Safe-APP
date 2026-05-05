@@ -133,6 +133,15 @@ struct DeviceDetailView: View {
                     }
                     .buttonStyle(.plain)
 
+                    Divider().padding(.leading, 52).background(Color.border)
+
+                    NavigationLink {
+                        BedExitEventHistoryView(edge: edge)
+                    } label: {
+                        rowContent(icon: "bed.double.fill", title: "夜間離床事件")
+                    }
+                    .buttonStyle(.plain)
+
                 }
                 .padding(.vertical, 8)
             }
